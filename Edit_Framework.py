@@ -28,10 +28,18 @@ class Edit_Framework():
         # self.tkObj.resizable(width=False, height=False)
 
         #初始的一些配置
-        self.image_exp_NST = self.cur_image = self.org_image = misc.imread(org_path)
+        self.image_exp_NST = self.cur_image = self.org_image = misc.imread(org_path) #图像都是原1024 x 1024大小的，只不过到时候在panel中显示的时候会有缩放
         self.cur_latent = self.org_lantent = np.load(latent_path)
-        self.ATMGAN_edit_info = {}   #存放ATMGAN编辑需要的固定的属性配置
+        self.ATMGAN_edit_info = {}   #存放ATMGAN编辑需要的固定的属性配置(ATMGAN_org_info的子集)
         self.ATMGAN_factors = {}     #存放ATMGAN编辑每个属性属性的动态编辑因子
+        self.ATMGAN_grid_info = {}   #存放当前需要使用ATMGAN编辑的属性中对应的激活张量位置和图像画的rect的id
+                                     #其内元素形式为:
+        # {'Curly_Hair':
+        #              {'resolution': 8,
+        #              'location': {loca1:id1,loca2:id2...}},
+        #  "Eyeglasses":
+        #              {'resolution': 16,
+        #              'location': {loca1:id1,loca2:id2...}}}
 
         left_frame = Frame(self.tkObj, bg="#CCFFFF")
         left_frame.pack(side=LEFT)
@@ -43,6 +51,10 @@ class Edit_Framework():
         image_frame.pack(side=TOP, expand=NO)
         self.imgPIL_org = ImageTk.PhotoImage(Image.fromarray(self.org_image).resize((image_width, image_height)))
         self.face_ImagePanel = self.create_ImagePanel(image_frame,self.imgPIL_org)
+
+
+        self.face_ImagePanel.bind("<Button-1>", self.facePanelClick)  # 绑定鼠标左键(<Button-1>)单击事件
+        self.face_ImagePanel.bind("<Button-2>", self.facePanelClick_right)  # 绑定鼠标右键(<Button-1>)单击事件
 
         # 中间使用ATMGAN和InterFaceGAN进行人脸属性编辑的功能区域
         mid_frame = Frame(self.tkObj)
@@ -65,6 +77,60 @@ class Edit_Framework():
         MakeUp_frame.pack(side=TOP, pady=10, ipady=10)
         self.create_MakeUp(MakeUp_frame, color="#FF99CC")
 
+    # 鼠标单击人脸图像界面发生的事件-画某个单元格或清除某个单元格
+    def facePanelClick(self, event):
+        # 获得当前画网格是在哪个局部属性下面
+        attr_name = self.ATMGAN_attrs_comb.get()
+        # 刚初始化或者删除了某个属性后再点击，这时候self.ATMGAN_grid_info中还没内容
+        if attr_name not in self.ATMGAN_grid_info.keys():
+            return
+        reso = self.ATMGAN_grid_info[attr_name]["resolution"]
+        x, y = event.x, event.y  #获取当前鼠标位置
+        grid_height, grid_width = image_height // reso, image_width // reso
+        location_id = y//grid_height*reso+x//grid_width
+        #说明原来已经画过了,那么这里就不再画一次(后期可能考虑对不同位置的特征值引入不同的权重，这时候下面就要修改了，更复杂了，以后再说)
+        cur_locations = self.ATMGAN_grid_info[attr_name]["location"]
+        if location_id in cur_locations.keys() and cur_locations[location_id]!=-1:
+            return
+
+        #没画过说明原来ATMGAN_grid_info中该属性的激活值不包括这一个，那么就把该位置激活值添加进去并画网格
+        self.ATMGAN_grid_info[attr_name]["location"][location_id] = self.draw_single_grid(reso, location_id)
+        # print("Add:", len(self.ATMGAN_grid_info[attr_name]["location"]),"-----", self.ATMGAN_grid_info[attr_name]["location"])
+
+    # 右击清除单元格
+    def facePanelClick_right(self, event):
+        attr_name = self.ATMGAN_attrs_comb.get()
+        if attr_name not in self.ATMGAN_grid_info.keys():
+            return
+
+        reso = self.ATMGAN_grid_info[attr_name]["resolution"]
+        x, y = event.x, event.y  # 获取当前鼠标位置
+        grid_height, grid_width = image_height // reso, image_width // reso
+        location_id = y // grid_height * reso + x // grid_width
+        cur_locations = self.ATMGAN_grid_info[attr_name]["location"]
+        #如果本来就没有网格，那么就不用删除了
+        if location_id not in cur_locations.keys() or cur_locations[location_id]==-1:
+            return
+
+        #否则删除！！
+        self.face_ImagePanel.delete(self.ATMGAN_grid_info[attr_name]["location"][location_id])
+        self.ATMGAN_grid_info[attr_name]["location"].pop(location_id)
+        # print("Delete:", len(self.ATMGAN_grid_info[attr_name]["location"]),"-----", self.ATMGAN_grid_info[attr_name]["location"])
+
+    # 根据特征图的分辨率和特征值的下标(行优先)画出当前的grid
+    def draw_single_grid(self, reso, location):
+        grid_height, grid_width = image_height // reso, image_width // reso
+        row_ind, col_ind = location // reso, location % reso
+        rect_id = self.face_ImagePanel.create_rectangle(grid_width * col_ind, grid_height * row_ind,
+                                                        grid_width * (col_ind + 1), grid_height * (row_ind + 1), outline="green",)
+        return rect_id
+
+    def update_ATMGAN_edit_info(self):
+        for attr_name,edit_info in self.ATMGAN_edit_info.items():
+            new_location_ids = [k for k,v in self.ATMGAN_grid_info[attr_name]["location"].items()]
+            # print("new_location_ids:",new_location_ids)
+            self.ATMGAN_edit_info[attr_name]["location"] = new_location_ids
+
     def update(self):
         # 依次整合InterFaceGAN(Z/W空间)、Style_Mixing(W+空间)和ATMGAN(激活张量空间)的编辑信息,然后一次性进行编辑
 
@@ -78,7 +144,10 @@ class Edit_Framework():
         # edit_res, latent, edit_info = InterFaceGAN_edit(self.org_lantent, InterFaceGAN_edit_info)
         self.cur_latent = moved_latent  #更新W空间的latent
 
-        # 3.在激活张量空间获取使用ATMGAN进行编辑所需要的信息
+        # 2.在激活张量空间获取使用ATMGAN进行编辑所需要的信息
+        # 2.1先根据之前再人脸图像中画各个属性下的网格更新ATMGAN_edit_info
+        self.update_ATMGAN_edit_info()
+        # 2.2然后再使用ATMGAN编辑结果图
         self.ATMGAN_feed = get_ATMGAN_feed(self.ATMGAN_edit_info,self.ATMGAN_factors)
 
         start_time = time.time()
@@ -87,7 +156,7 @@ class Edit_Framework():
 
         #最终的编辑结果收到InterFaceGAN、Style_Mixing和AMTGAN的综合影响
         self.cur_image = edit_res
-        self.update_imagePanel(end_time - start_time)
+        self.update_imagePanel(end_time - start_time,draw_grid=True)
 
     def start_makeUp(self):
         # 进行妆容迁移前，要保留之前InterFace和ATMGAN编辑的结果
@@ -112,6 +181,20 @@ class Edit_Framework():
             attr_names.append(attr_name)
         return attr_names
 
+    def draw_edit_grid(self,attr_name):
+        # attr_info就是ATMGAN_edit_config.py中每个属性的编辑初始信息
+        if attr_name not in self.ATMGAN_grid_info.keys():
+            return
+        reso = self.ATMGAN_grid_info[attr_name]["resolution"]
+        locations = self.ATMGAN_grid_info[attr_name]["location"].keys()
+        for loca in locations:
+            # 如果原来已经画过了，那么就要删除该方框
+            cur_rect_id = self.ATMGAN_grid_info[attr_name]["location"][loca]
+            if cur_rect_id != -1:
+                self.face_ImagePanel.delete(cur_rect_id)
+            self.ATMGAN_grid_info[attr_name]["location"][loca] = self.draw_single_grid(reso, loca)
+        # print(self.ATMGAN_grid_info)
+
     def create_ATMGAN(self, frame, color):
         #ttk.Style()命名必须以Txxxx结尾,其中xxxx是button/Label之类，当然还可以在之前加自定义的参数，如"my2."
         ttk.Style().configure('AMTGAN.TButton', font=('Helvetica', 20), foreground="black", background=color)
@@ -121,21 +204,21 @@ class Edit_Framework():
         ATMGAN_lab = ttk.Label(frame, text="ATMGAN", style="AMTGAN.TLabel")
         ATMGAN_lab.pack(side=TOP,pady=10)
 
-        def change_ATMGAN_attr_show(event):
-            attr_name = ATMGAN_attrs_comb.get()
+        def change_ATMGAN_attr_show(event=None):
+            attr_name = self.ATMGAN_attrs_comb.get()
             attr_info = ATMGAN_org_info[attr_name]
             ATMGAN_attr_intro_lab.config(text="属性名称:{0}\n张量分辨率:{1}x{1}\n特征图:[{2}]".
-                           format(attr_name, attr_info["reslotion"], ",".join([str(x) for x in attr_info["fmap"]])))
+                           format(attr_name, attr_info["resolution"], ",".join([str(x) for x in attr_info["fmap"]])))
 
         attr_names = self.get_ATMGAN_attr_names()
-        ATMGAN_attrs_comb = ttk.Combobox(frame)
-        ATMGAN_attrs_comb['value'] = attr_names
-        ATMGAN_attrs_comb.pack(side=TOP, pady=10)
-        ATMGAN_attrs_comb.current(2)
-        ATMGAN_attrs_comb.bind("<<ComboboxSelected>>", change_ATMGAN_attr_show)
+        self.ATMGAN_attrs_comb = ttk.Combobox(frame)
+        self.ATMGAN_attrs_comb['value'] = attr_names
+        self.ATMGAN_attrs_comb.pack(side=TOP, pady=10)
+        self.ATMGAN_attrs_comb.current(0)
+        self.ATMGAN_attrs_comb.bind("<<ComboboxSelected>>", change_ATMGAN_attr_show)
 
         ATMGAN_attr_intro_lab = Label(frame, text="属性名称:{0}\n张量分辨率:{1}x{1}\n特征图:[{2}]".
-                           format(attr_names[0],ATMGAN_org_info[attr_names[0]]["reslotion"],",".join([str(x) for x in ATMGAN_org_info[attr_names[0]]["fmap"]])),bg=color)
+                           format(attr_names[0],ATMGAN_org_info[attr_names[0]]["resolution"],",".join([str(x) for x in ATMGAN_org_info[attr_names[0]]["fmap"]])),bg=color)
         ATMGAN_attr_intro_lab.pack(side=TOP)
         # 滑动条:orient，控制滑块的方位，HORIZONTAL（水平），VERTICAL（垂直）,通过resolution选项可以控制分辨率（步长），通过tickinterval选项控制刻度
         ATMGAN_scale = Scale(frame, from_=-100, to=100, orient=HORIZONTAL, resolution=0.1, length=400, bg=color)
@@ -146,21 +229,32 @@ class Edit_Framework():
 
 
         def change_comb(event):
+            # 双击ATMGAN中代表当前待编辑属性集合的Listbox中的元素，会发生以下的事情
+            # 1.更新下拉框的显示和ATMGAN_attr_intro_lab标签的显示
             selection = self.ATMGAN_attrs_listbox.curselection()
             attr_name = self.ATMGAN_attrs_listbox.get(selection)
             attr_name = attr_name[:attr_name.find(":")]
             for ind, name in enumerate(attr_names):
                 if name.startswith(attr_name):
-                    ATMGAN_attrs_comb.current(ind)
+                    self.ATMGAN_attrs_comb.current(ind)
+            change_ATMGAN_attr_show()
+
+            # 2.先删除原panel中所有的图像和矩形并画上原来的人脸图
+            # (其实就是清除原panel中所有的矩形，保留人脸图)
+            self.face_ImagePanel.delete(ALL)
+            self.update_imagePanel(0.00,draw_grid=True)
+
+            # 3.重新绘制下拉框所指属性对应的grids
+            # (其实这时候self.ATMGAN_grid_info[attr_name]中已经有信息了，只不过线条被清除了，所以需要重新画)
+            self.draw_edit_grid(attr_name)
 
         self.ATMGAN_attrs_listbox = Listbox(temp_frame1, width=30, height=8)
         self.ATMGAN_attrs_listbox.pack(side=LEFT, padx=10)
         self.ATMGAN_attrs_listbox.bind("<Double-Button-1>", change_comb)
 
-
         #添加ATMGAN待编辑的属性
         def add_ATMGAN_edit_attr():
-            attr_name = ATMGAN_attrs_comb.get()
+            attr_name = self.ATMGAN_attrs_comb.get()
             attr_factor = ATMGAN_scale.get()
             attr_info = ATMGAN_org_info[attr_name]
             # 1.listbox中添加相关信息
@@ -171,12 +265,22 @@ class Edit_Framework():
                     self.ATMGAN_attrs_listbox.delete(ind)
                     insert_ind = ind
                     break
-            self.ATMGAN_attrs_listbox.insert(insert_ind, "{0}: {1}--->{2}x{2}   [{3}]".format(attr_name, attr_factor, attr_info["reslotion"],
+            self.ATMGAN_attrs_listbox.insert(insert_ind, "{0}: {1}--->{2}x{2}   [{3}]".format(attr_name, attr_factor, attr_info["resolution"],
                                                                                        ",".join([str(x) for x in attr_info["fmap"]])))
             # 2.ATMGAN_edit_info添加相关信息
             self.ATMGAN_edit_info[attr_name] = attr_info
             # 3.ATMGAN_factors添加相关信息
             self.ATMGAN_factors[attr_name] = attr_factor
+            # 4.删除图像界面中已经有的所有网格
+            self.face_ImagePanel.delete(ALL)  #先把Canves上的内容全删了delete(ALL), 然后再重新画上人脸图
+            self.update_imagePanel(0.00,draw_grid=True)
+
+            # 5.在图像中添加网格表示该属性的待编辑区域
+            # 初始化self.ATMGAN_grid_info[attr_name]中的"resolution"信息和"location"信息
+            self.ATMGAN_grid_info[attr_name]={"resolution": attr_info["resolution"]}
+            self.ATMGAN_grid_info[attr_name]["location"]={k:-1 for k in attr_info["location"]}  #初始值全部为-1，表明还没开始画
+            self.draw_edit_grid(attr_name)  #重新绘制self.ATMGAN_grid_info[attr_name]中的包含的网格信息
+
         add_btn = ttk.Button(temp_frame1, style="AMTGAN.TButton", text="添加/更新", command=add_ATMGAN_edit_attr)
         add_btn.pack(side=TOP, pady=10)
 
@@ -192,15 +296,31 @@ class Edit_Framework():
             self.ATMGAN_edit_info.pop(attr_name)
             #3.移除ATMGAN_factors中该属性的编辑因子
             self.ATMGAN_factors.pop(attr_name)
+            #4.移除ATMGAN_grid_info中该属性的编辑网格信息
+            self.ATMGAN_grid_info.pop(attr_name)
+            #5.如果图像画的正是当前删除属性的网格，那么也删除图中的网格
+            if attr_name == self.ATMGAN_attrs_comb.get():
+                self.update_imagePanel(0.00, draw_grid=False)
+
         remove_btn = ttk.Button(temp_frame1, style="AMTGAN.TButton", text="移除",command = remove_ATMGAN_edit_attr)
         remove_btn.pack(side=TOP, pady=10)
 
-    def update_imagePanel(self, spend_time, update_from_NST=False):
+    def update_imagePanel(self, spend_time, update_from_NST=False, draw_grid = False):
         #防止风格迁移的效果不断累加,同时能够保证self.cur_image一直都是大窗口显示的人脸结果
         if not update_from_NST:
             self.image_exp_NST = self.cur_image
         self.imgPIL_org = ImageTk.PhotoImage(Image.fromarray(self.cur_image).resize((image_width, image_height)))
+        # 更新界面:
+        # 1.先把原来界面上所有图像，矩形全部删除
+        self.face_ImagePanel.delete(ALL)
+        # 2.画上新人脸图
         self.face_ImagePanel.create_image(0, 0, image=self.imgPIL_org, anchor=NW)
+        # 3.如果需要再画上原图中的矩形
+
+        if draw_grid:
+            attr_name = self.ATMGAN_attrs_comb.get()
+            self.draw_edit_grid(attr_name)
+
         self.time_show_lab.config(text="用时:{:.2f} s".format(spend_time))
 
     def get_InterFaceGAN_edit_info(self):

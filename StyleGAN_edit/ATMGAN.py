@@ -29,7 +29,7 @@ def get_fmap_input(edit_attr_info, factor_dict):
     for attr_name, factor in factor_dict.items():
         attr_info = edit_attr_info[attr_name]
         fmap = attr_info["fmap"]
-        reso = attr_info["reslotion"]
+        reso = attr_info["resolution"]
         location = attr_info["location"]
 
         for fmap_index in fmap:
