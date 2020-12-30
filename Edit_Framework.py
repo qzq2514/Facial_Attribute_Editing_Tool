@@ -10,6 +10,7 @@ from StyleGAN_edit.MakeUp import get_mixing_dlatent
 from Utils import get_file_name
 from scipy import misc
 from tkinter import ttk   #用ttk的按钮，不会出现文字不显示的问题
+from Utils import check_dir
 from tkinter import *
 from tkinter.filedialog import *
 from PIL import Image, ImageTk
@@ -28,6 +29,7 @@ class Edit_Framework():
         # self.tkObj.resizable(width=False, height=False)
 
         #初始的一些配置
+        self.temp_save_dir = check_dir("temp_dir")
         self.image_exp_NST = self.cur_image = self.org_image = misc.imread(org_path) #图像都是原1024 x 1024大小的，只不过到时候在panel中显示的时候会有缩放
         self.cur_latent = self.org_lantent = np.load(latent_path)
         self.ATMGAN_edit_info = {}   #存放ATMGAN编辑需要的固定的属性配置(ATMGAN_org_info的子集)
@@ -59,6 +61,16 @@ class Edit_Framework():
         # 中间使用ATMGAN和InterFaceGAN进行人脸属性编辑的功能区域
         mid_frame = Frame(self.tkObj)
         mid_frame.pack(side=LEFT)
+
+        mid_top_frame = Frame(mid_frame)
+        mid_top_frame.pack(side=TOP)
+
+        ttk.Style().configure('update_save.TButton', font=('Helvetica', 40), foreground="black")
+        update_btn = ttk.Button(mid_top_frame, style="update_save.TButton", text="更新", command=self.update)
+        update_btn.pack(side=LEFT,padx=10)
+        save_btn = ttk.Button(mid_top_frame, style="update_save.TButton", text="保存", command=self.save)
+        save_btn.pack(side=LEFT)
+
         ATMGAN_frame = Frame(mid_frame, bg="#FFFFCC")
         ATMGAN_frame.pack(side=TOP, pady=10, ipady=20)
         self.create_ATMGAN(ATMGAN_frame, color="#FFFFCC")
@@ -130,6 +142,10 @@ class Edit_Framework():
             new_location_ids = [k for k,v in self.ATMGAN_grid_info[attr_name]["location"].items()]
             # print("new_location_ids:",new_location_ids)
             self.ATMGAN_edit_info[attr_name]["location"] = new_location_ids
+
+    def save(self):
+        save_name = time.strftime("%Y_%m_%d_%H_%M_%S.jpg", time.localtime(time.time()))
+        misc.imsave(os.path.join(self.temp_save_dir, save_name), self.cur_image)
 
     def update(self):
         # 依次整合InterFaceGAN(Z/W空间)、Style_Mixing(W+空间)和ATMGAN(激活张量空间)的编辑信息,然后一次性进行编辑
@@ -232,8 +248,8 @@ class Edit_Framework():
             # 双击ATMGAN中代表当前待编辑属性集合的Listbox中的元素，会发生以下的事情
             # 1.更新下拉框的显示和ATMGAN_attr_intro_lab标签的显示
             selection = self.ATMGAN_attrs_listbox.curselection()
-            attr_name = self.ATMGAN_attrs_listbox.get(selection)
-            attr_name = attr_name[:attr_name.find(":")]
+            selection_str = self.ATMGAN_attrs_listbox.get(selection)
+            attr_name = selection_str[:selection_str.find(":")]
             for ind, name in enumerate(attr_names):
                 if name.startswith(attr_name):
                     self.ATMGAN_attrs_comb.current(ind)
@@ -247,6 +263,13 @@ class Edit_Framework():
             # 3.重新绘制下拉框所指属性对应的grids
             # (其实这时候self.ATMGAN_grid_info[attr_name]中已经有信息了，只不过线条被清除了，所以需要重新画)
             self.draw_edit_grid(attr_name)
+
+            # 4.把滑动条更新到当前选择的属性的编辑因子
+            info_without_name = selection_str[selection_str.find(":")+1:]
+            attr_scale = info_without_name[:info_without_name.find("--->")]
+            print(attr_scale)
+            attr_scale = float(attr_scale)
+            ATMGAN_scale.set(attr_scale)
 
         self.ATMGAN_attrs_listbox = Listbox(temp_frame1, width=30, height=8)
         self.ATMGAN_attrs_listbox.pack(side=LEFT, padx=10)
@@ -587,8 +610,6 @@ class Edit_Framework():
         Radiobutton(frame, bg=color, variable=self.latent_choice, text="Z空间", value=0).pack(side=LEFT)
         Radiobutton(frame, bg=color, variable=self.latent_choice, text="W空间", value=1).pack(side=LEFT)
         Radiobutton(frame, bg=color, variable=self.latent_choice, text="W+空间", value=2).pack(side=LEFT)
-        update_btn = ttk.Button(frame, style="head.TButton", text="更新", command=self.update)
-        update_btn.pack(side=LEFT)
 
 
 if __name__ == '__main__':
