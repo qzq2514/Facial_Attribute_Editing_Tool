@@ -45,15 +45,15 @@ edit_boundary_info格式:
                       ...}
 }
 '''
-
-#获得Z/W空间内移动后的向量
+#上面edit_boundary_info格式为InterFaceGAN的一组编辑信息，包括一个主要编辑属性和多个约束属性
+#根据一组编辑信息获得Z/W空间内移动后的向量
 def get_InterFaceGAN_move_direction(latent, edit_boundary_info):
     edit_info = ""
     main_boundary_info = edit_boundary_info["main_boundary"]
     main_name = main_boundary_info["name"]
     main_factor = main_boundary_info["factor"]
     edit_info += "_{}_{:.2f}".format(main_name, main_factor)
-    main_boundary = main_boundary_info["main_boundary"]
+    main_boundary = main_boundary_info["main_boundary"].copy()   #注意这里要copy一下,因为python是引用传递,不然可能会修改原boundary
 
     move_boundary = main_boundary
     for cond_name, cond_boundary_info in edit_boundary_info["cond_boundaries"].items():
