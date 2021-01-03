@@ -6,6 +6,11 @@ def check_dir(dir):
         os.makedirs(dir)
     return dir
 
+def latent_post_process(latent):
+    if latent.shape[0]==1:
+        return latent
+    return np.expand_dims(latent,axis=0)
+
 def get_file_name(path, keep_ext = True):
     name = os.path.basename(path)
     return name if keep_ext else os.path.splitext(name)[0]

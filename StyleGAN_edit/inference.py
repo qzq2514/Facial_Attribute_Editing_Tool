@@ -13,9 +13,10 @@ with tf.gfile.FastGFile(model_path, "rb") as fr:
     tf.import_graph_def(graph_def, name="")
 
 stylegan2_sess.run(tf.global_variables_initializer())
-z_latent_place = stylegan2_sess.graph.get_tensor_by_name('Gs/G_mapping/new_latent:0')
-w_latent_place = stylegan2_sess.graph.get_tensor_by_name('Gs/G_mapping/Dense7/mul_2:0')  #w空间
-wPlus_latent_place = stylegan2_sess.graph.get_tensor_by_name("Gs/G_synthesis/dlatents_in:0")
+z_latent_place = stylegan2_sess.graph.get_tensor_by_name('Gs/G_mapping/new_latent:0')                # Z空间[1,512]
+w_latent_place = stylegan2_sess.graph.get_tensor_by_name('Gs/G_mapping/Dense7/mul_2:0')              # W空间[1,512]
+wPlus_latent_place = stylegan2_sess.graph.get_tensor_by_name("Gs/G_mapping/Broadcast/Tile:0")        # W+空间[1,18,512](W空间简单复制18份)
+# half_wPlus_latent_place = stylegan2_sess.graph.get_tensor_by_name("Gs/G_synthesis/dlatents_in:0")    # W+空间每个元素减半[1,18,512](暂时可不用)
 image_place = stylegan2_sess.graph.get_tensor_by_name('Gs/G_synthesis/output:0')
 
 '''
@@ -34,7 +35,7 @@ def get_sesssion():
 # 初始化: 4.745085954666138 s
 # 预热后: 3.3608760833740234 s
 # 参数中的input_feed只是ATMGAN中需要用的,还没牵扯到latent
-def inference_core(latent, input_feed, latent_type="W", out_node="Image"):
+def inference_core(latent, input_feed=None, latent_type="W", out_node="Image"):
     if input_feed is None:
         input_feed={}
 
@@ -80,8 +81,14 @@ def random_gen():
     return latent, image_stylized
 
 if __name__ == '__main__':
-    latent_path = "data/2020_09_21_13_06_52.npy"
+    latent_path = "data/Leonardo_W+.npy"
     latent = np.load(latent_path)
-    for _ in range(10):
-        # random_gen()
-        inference_core(latent, None, "W", "Image")
+    # print(latent[:,:10])
+    w_plus = inference_core(latent[np.newaxis,:], None, latent_type="W+")
+    # print("-----------")
+    # print(w_plus.shape, np.sum(w_plus[0, 1, :]))
+    # print(w_plus)
+
+    # for _ in range(10):
+    #     # random_gen()
+    #     inference_core(latent, None, "W", "Image")

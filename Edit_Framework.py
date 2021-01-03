@@ -7,7 +7,7 @@ from NST.transfer_inference import style_transform
 from StyleGAN_edit.inference import random_gen,inference_core
 from StyleGAN_edit.InterFaceGAN import get_InterFaceGAN_move_direction
 from StyleGAN_edit.MakeUp import get_mixing_dlatent
-from Utils import get_file_name
+from Utils import get_file_name, latent_post_process
 from scipy import misc
 from tkinter import ttk   #用ttk的按钮，不会出现文字不显示的问题
 from Utils import check_dir
@@ -15,10 +15,11 @@ from tkinter import *
 from tkinter.filedialog import *
 from PIL import Image, ImageTk
 
+latent_str=["Z","W","W+"]
 image_height,image_width = 880, 880
 small_image_shape = (256, 256)
 org_path = "StyleGAN_edit/data/2020_09_21_13_06_52.jpg"
-latent_path = "StyleGAN_edit/data/2020_09_21_13_06_52.npy"
+latent_path = "StyleGAN_edit/data/2020_09_21_13_06_52_W.npy"
 
 class Edit_Framework():
     def __init__(self,master):
@@ -31,7 +32,8 @@ class Edit_Framework():
         #初始的一些配置
         self.temp_save_dir = check_dir("temp_dir")
         self.image_exp_NST = self.cur_image = self.org_image = misc.imread(org_path) #图像都是原1024 x 1024大小的，只不过到时候在panel中显示的时候会有缩放
-        self.cur_latent = self.org_lantent = np.load(latent_path)
+        self.cur_latent = self.org_lantent = latent_post_process(np.load(latent_path))
+        self.latent_type = "W"
         self.ATMGAN_edit_info = {}   #存放ATMGAN编辑需要的固定的属性配置(ATMGAN_org_info的子集)
         self.ATMGAN_factors = {}     #存放ATMGAN编辑每个属性属性的动态编辑因子
         self.ATMGAN_grid_info = {}   #存放当前需要使用ATMGAN编辑的属性中对应的激活张量位置和图像画的rect的id
@@ -125,7 +127,8 @@ class Edit_Framework():
             selection = InterFaceGAN_main_attrs_listbox.curselection()
             selection_str = InterFaceGAN_main_attrs_listbox.get(selection)
             main_attr_name_with_ind = selection_str[:selection_str.find(":")]
-            scale = float(selection_str[selection_str.find(":")+1:selection_str.find("--->")])
+
+            scale = float(selection_str[selection_str.find(":")+1:])
 
             self.main_attr_scale.set(scale)
             for ind, boundary_name in enumerate(boundary_names):
@@ -167,8 +170,8 @@ class Edit_Framework():
             InterFaceGAN_main_attrs_listbox.insert(insert_ind, "{0}: {1}".format(selection, scale))
 
             #2.向self.InterFace_edit_info添加信息
-            boundary = np.load(os.path.join("StyleGAN_edit/models/boundaries/for_latent_w", "{}_w/{}_boundary.npy".
-                                            format(selection, attr_name)))
+            boundary = np.load(os.path.join("StyleGAN_edit/models/boundaries/for_latent_{}".format(self.latent_type.lower()), "{}_{}/{}_boundary.npy".
+                                            format(selection, self.latent_type.lower(), attr_name)))
             self.InterFace_edit_info[selection]={'main_boundary': {'name': attr_name,
                                                                    'factor': scale,
                                                                    'main_boundary': boundary},
@@ -181,13 +184,13 @@ class Edit_Framework():
         add_btn.pack(side=TOP, pady=10, expand=NO)
 
         def delete_main_attr():
-            # 删除InterFaceGAN的编辑属性
+            # 删除InterFaceGAN的主编辑属性
             # 1. 先删除InterFaceGAN_main_attrs_listbox中对应的属性
             selection = InterFaceGAN_main_attrs_listbox.curselection()
             if len(selection) == 0:
                 return
             attr_name_with_ind = InterFaceGAN_main_attrs_listbox.get(selection).split(":")[0]
-            print("attr_name_with_ind:", attr_name_with_ind)
+            # print("attr_name_with_ind:", attr_name_with_ind)
             InterFaceGAN_main_attrs_listbox.delete(selection)
 
             # 2.删除self.InterFace_edit_info中对应的属性信息
@@ -196,7 +199,7 @@ class Edit_Framework():
         remove_btn = ttk.Button(temp_frame3, style="InterFaceGAN.TButton", text="移除", command=delete_main_attr)
         remove_btn.pack(side=TOP, expand=NO)
 
-        # 约束属性
+        # 约束属性相关
         temp_frame2 = Frame(frame, bg=color)
         temp_frame2.pack(side=TOP, pady=10)
         cond_attr_lab = ttk.Label(temp_frame2, text="约束属性:", style="InterFaceGAN.TLabel")
@@ -229,7 +232,7 @@ class Edit_Framework():
                     self.cond_attr_comb.current(ind)
 
             # 2.更新self.cond_attr_scale
-            scale = float(selection_str[selection_str.find(":") + 1:selection_str.find("--->")])
+            scale = float(selection_str[selection_str.find(":") + 1:])
             self.cond_attr_scale.set(scale)
 
         self.cond_attrs_listbox = Listbox(temp_frame4,width=30, height=5)
@@ -261,8 +264,8 @@ class Edit_Framework():
 
             # 2.向self.InterFace_edit_info添加该约束属性的信息
             cond_attr_name_no_num = cond_attr_name[cond_attr_name.find("_")+1:]
-            cond_boundary = np.load(os.path.join("StyleGAN_edit/models/boundaries/for_latent_w", "{}_w/{}_boundary.npy".
-                                                 format(cond_attr_name, cond_attr_name_no_num)))
+            cond_boundary = np.load(os.path.join("StyleGAN_edit/models/boundaries/for_latent_{}".format(self.latent_type.lower()), "{}_{}/{}_boundary.npy".
+                                                 format(cond_attr_name, self.latent_type.lower(), cond_attr_name_no_num)))
             self.InterFace_edit_info[main_attr_name_with_ind]["cond_boundaries"][cond_attr_name_no_num] = {'cond_factor': float(cond_attr_factor),
                                                                                                             'cond_boundary': cond_boundary}
 
@@ -292,32 +295,7 @@ class Edit_Framework():
         remove_btn = ttk.Button(temp_frame4, style="InterFaceGAN.TButton", text="移除", command=delete_condi_attr)
         remove_btn.pack(side=TOP, pady=10, expand=NO)
 
-    # def get_InterFaceGAN_edit_info(self):
-    #     # 获得InterFaceGAN的编辑信息
-    #     # 1.获取主编辑属性
-    #     main_attr_factor = self.main_attr_scale.get()
-    #     boundary_name = self.main_attr_comb.get()
-    #     boundary = np.load(os.path.join("StyleGAN_edit/models/boundaries/for_latent_w", "{}_w/{}_boundary.npy".
-    #                                     format(boundary_name, boundary_name[boundary_name.find("_") + 1:])))
-    #     InterFaceGAN_edit_info = {"main_boundary": {'name': 'Mouth_Slightly_Open',
-    #                                                 'factor': main_attr_factor,
-    #                                                 'main_boundary': boundary},
-    #                               "cond_boundaries": {}}
-    #     # 2.获取约束属性
-    #     cond_nums = self.cond_attrs_listbox.size()
-    #     for ind in range(cond_nums):
-    #         edit_info = self.cond_attrs_listbox.get(ind)
-    #         cond_boundary_name, cond_factor = edit_info.split(":")
-    #         cond_boundary_name_no_num = cond_boundary_name[cond_boundary_name.find("_") + 1:]
-    #         cond_boundary = np.load(os.path.join("StyleGAN_edit/models/boundaries/for_latent_w", "{}_w/{}_boundary.npy".
-    #                                              format(cond_boundary_name, cond_boundary_name_no_num)))
-    #         # print(cond_boundary_name, cond_factor, cond_boundary_name_no_num)  # 5_Bangs 0.71 Bangs
-    #
-    #         InterFaceGAN_edit_info["cond_boundaries"][cond_boundary_name_no_num] = {'cond_factor': float(cond_factor),
-    #                                                                                 'cond_boundary': cond_boundary}
-    #     return InterFaceGAN_edit_info
-
-    # 鼠标单击人脸图像界面发生的事件-画某个单元格或清除某个单元格
+    # 鼠标单击人脸图像界面发生的事件-画某个单元格
     def facePanelClick(self, event):
         # 获得当前画网格是在哪个局部属性下面
         attr_name = self.ATMGAN_attrs_comb.get()
@@ -337,7 +315,7 @@ class Edit_Framework():
         self.ATMGAN_grid_info[attr_name]["location"][location_id] = self.draw_single_grid(reso, location_id)
         # print("Add:", len(self.ATMGAN_grid_info[attr_name]["location"]),"-----", self.ATMGAN_grid_info[attr_name]["location"])
 
-    # 右击清除单元格
+    # 鼠标单击人脸图像界面发生的事件-右击清除单元格
     def facePanelClick_right(self, event):
         attr_name = self.ATMGAN_attrs_comb.get()
         if attr_name not in self.ATMGAN_grid_info.keys():
@@ -366,7 +344,7 @@ class Edit_Framework():
         return rect_id
 
     def update_ATMGAN_edit_info(self):
-        for attr_name,edit_info in self.ATMGAN_edit_info.items():
+        for attr_name, edit_info in self.ATMGAN_edit_info.items():
             new_location_ids = [k for k,v in self.ATMGAN_grid_info[attr_name]["location"].items()]
             # print("new_location_ids:",new_location_ids)
             self.ATMGAN_edit_info[attr_name]["location"] = new_location_ids
@@ -382,6 +360,7 @@ class Edit_Framework():
         moved_latent = self.org_lantent
         for selection, attr_edit_info in self.InterFace_edit_info.items():
             moved_latent, edit_info = get_InterFaceGAN_move_direction(moved_latent, attr_edit_info)
+            print("InterFaceGAN_edit_info:",edit_info)
         # 单独使用InterFaceGAN进行编辑(inference时候不考虑Style_Mixing和ATMGAN)
         # # 这里暂时让InterFaceGAN都是最原始的latent上进行编辑,后续可能考虑添加一个选项,
         # # 让使用者决定是从原始开始编辑还是从当前InterFaceGAN的编辑结果进一步编辑,改动的话,这里只需要将self.org_lantent变为self.cur_latent就行
@@ -392,11 +371,11 @@ class Edit_Framework():
         # 2.1先根据之前再人脸图像中画各个属性下的网格更新ATMGAN_edit_info
         self.update_ATMGAN_edit_info()
         # 2.2然后再使用ATMGAN编辑结果图
-        self.ATMGAN_feed = get_ATMGAN_feed(self.ATMGAN_edit_info,self.ATMGAN_factors)
+        self.ATMGAN_feed = get_ATMGAN_feed(self.ATMGAN_edit_info, self.ATMGAN_factors)
 
         start_time = time.time()
         # print("self.cur_latent:",self.cur_latent[0][:10])
-        edit_res = inference_core(self.cur_latent, self.ATMGAN_feed)
+        edit_res = inference_core(self.cur_latent, self.ATMGAN_feed, latent_type=self.latent_type)
         end_time = time.time()
         # print("----------")
 
@@ -411,9 +390,9 @@ class Edit_Framework():
 
         # 开始在W+空间进行Style_Mixing得到混合后的隐向量
         makeUp_name = self.makeUp_comb.get()
-        makeUp_latent = np.load("StyleGAN_edit/MakeUp/makeup_latents/{}.npy".format(makeUp_name))
+        makeUp_latent = latent_post_process(np.load(latent_path))
 
-        mixing_dlatent = get_mixing_dlatent(self.cur_latent, makeUp_latent)
+        mixing_dlatent = get_mixing_dlatent(self.cur_latent, makeUp_latent, latent1_type = self.latent_type)
 
         start_time = time.time()
         edit_res = inference_core(mixing_dlatent, self.ATMGAN_feed, latent_type="W+")
@@ -510,7 +489,8 @@ class Edit_Framework():
             attr_name = self.ATMGAN_attrs_comb.get()
             attr_factor = ATMGAN_scale.get()
             attr_info = ATMGAN_org_info[attr_name]
-            # 1.listbox中添加相关信息
+
+            # 1.listbox中添加或更新相关属性的信息
             attr_nums = self.ATMGAN_attrs_listbox.size()
             insert_ind = END
             for ind in range(attr_nums):
@@ -520,19 +500,26 @@ class Edit_Framework():
                     break
             self.ATMGAN_attrs_listbox.insert(insert_ind, "{0}: {1}--->{2}x{2}   [{3}]".format(attr_name, attr_factor, attr_info["resolution"],
                                                                                        ",".join([str(x) for x in attr_info["fmap"]])))
-            # 2.ATMGAN_edit_info添加相关信息
-            self.ATMGAN_edit_info[attr_name] = attr_info
+
+            # 2.ATMGAN_edit_info添加相关信息(如果原来添加过了,那么就不用动了,不然可能会把之前修增加/移除过的网格复原)
+            if attr_name not in self.ATMGAN_edit_info.keys():
+                self.ATMGAN_edit_info[attr_name] = attr_info
+
             # 3.ATMGAN_factors添加相关信息
             self.ATMGAN_factors[attr_name] = attr_factor
-            # 4.删除图像界面中已经有的所有网格
-            self.face_ImagePanel.delete(ALL)  #先把Canves上的内容全删了delete(ALL), 然后再重新画上人脸图
-            self.update_imagePanel(0.00,draw_grid=True)
-
-            # 5.在图像中添加网格表示该属性的待编辑区域
+            # 4.删除图像界面中已经有的所有网格(即先把Canves上的内容全删了delete(ALL))
+            self.face_ImagePanel.delete(ALL)
             # 初始化self.ATMGAN_grid_info[attr_name]中的"resolution"信息和"location"信息
-            self.ATMGAN_grid_info[attr_name]={"resolution": attr_info["resolution"]}
-            self.ATMGAN_grid_info[attr_name]["location"]={k:-1 for k in attr_info["location"]}  #初始值全部为-1，表明还没开始画
-            self.draw_edit_grid(attr_name)  #重新绘制self.ATMGAN_grid_info[attr_name]中的包含的网格信息
+            # (同样,如果原来ATMGAN_grid_info已经有了该属性的信息那么就用最新的)
+            if attr_name not in self.ATMGAN_grid_info.keys():
+                self.ATMGAN_grid_info[attr_name] = {"resolution": attr_info["resolution"]}
+                self.ATMGAN_grid_info[attr_name]["location"] = {k: -1 for k in attr_info["location"]}  # 初始值全部为-1，表明还没开始画
+
+            # print("Add/Update:", len(self.ATMGAN_grid_info[attr_name]["location"]), "-----",
+            #       self.ATMGAN_grid_info[attr_name]["location"])
+
+            # 5.在图像中添加或更新网格,表示该属性当前最新的待编辑区域
+            self.update_imagePanel(0.00,draw_grid=True)  #重新绘制self.ATMGAN_grid_info[attr_name]中的包含的网格信息
 
         add_btn = ttk.Button(temp_frame1, style="AMTGAN.TButton", text="添加/更新", command=add_ATMGAN_edit_attr)
         add_btn.pack(side=TOP, pady=5)
@@ -681,7 +668,7 @@ class Edit_Framework():
         return ImgPanel
 
     def get_boundaries(self):
-        dir = "StyleGAN_edit/models/boundaries/for_latent_w"
+        dir = "StyleGAN_edit/models/boundaries/for_latent_{}".format(self.latent_type.lower())
         boundary_names = []
         for boundary_name in os.listdir(dir):
             boundary_names.append(boundary_name[:boundary_name.rfind("_")])
@@ -703,8 +690,10 @@ class Edit_Framework():
         file_path = askopenfilename(title='选择隐向量',initialdir="StyleGAN_edit/data")  # initialdir=(os.path.expanduser("")
 
         start_time = time.time()
-        latent = np.load(file_path)
-        image = inference_core(input_feed=latent)
+        latent = latent_post_process(np.load(file_path))
+        self.latent_type = latent_str[self.latent_choice.get()]
+        print("self.latent_type:",self.latent_type)
+        image = inference_core(latent, latent_type=self.latent_type)
         end_time = time.time()
         # 加载隐向量那么久重新绘图,会修改self.cur_image和self.org_image,
         # 也会修改self.cur_latent和self.org_lantent

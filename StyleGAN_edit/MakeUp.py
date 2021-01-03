@@ -2,11 +2,11 @@ from scipy import misc
 import numpy as np
 from inference import inference_core
 
-def get_mixing_dlatent(latent1, latent2, K=8):
+def get_mixing_dlatent(latent1, latent2, K=8 ,latent1_type="W", latent2_type="W"):
     # 通过w空间得到
     # 这里w+空间的delatent1不是latent1简单复制18份得到的(可能找的张量名不太对,但是不影响编辑)
-    delatent1 = inference_core(latent1, None, latent_type="W", out_node="W+")
-    delatent2 = inference_core(latent2, None, latent_type="W", out_node="W+")
+    delatent1 = inference_core(latent1, None, latent_type=latent1_type, out_node="W+")
+    delatent2 = inference_core(latent2, None, latent_type=latent2_type, out_node="W+")
 
     # 0,2, 4, 6, 8, 10, 12, 14,  16
     # [4,8,16,32,64,128,256,512,1024]

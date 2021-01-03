@@ -20,10 +20,10 @@ from inference import get_sesssion, inference_core
 # Pale_skin: boundaries/for_latent_w/26_Pale_Skin_w/Pale_Skin_boundary.npy
 
 # save_dir = check_dir("golbal_edit_res/")
-edit_factor = 1.0   #主要编辑方向的编辑步长
-main_boundary_path = "models/boundaries/for_latent_w/21_Mouth_Slightly_Open_w/Mouth_Slightly_Open_boundary.npy"
+edit_factor = -5.6   #主要编辑方向的编辑步长
+main_boundary_path = "models/boundaries/for_latent_w/15_Eyeglasses_w/Eyeglasses_boundary.npy"
 #限制条件即对应的限制程度
-cond_boundary_dict_org = {"models/boundaries/for_latent_w/5_Bangs_w/Bangs_boundary.npy": 1.0}
+cond_boundary_dict_org = {"models/boundaries/for_latent_w/5_Bangs_w/Bangs_boundary.npy": 4.88}
 
 latent_path = "data/2020_09_21_13_06_52.npy"
 
